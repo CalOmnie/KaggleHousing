@@ -28,6 +28,7 @@ class KaggleModel(object):
         self._yTrain = self._train["SalePrice"]
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
+        
 
     def fill(self):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
@@ -93,6 +94,8 @@ class KaggleModel(object):
             lbl.fit(list(all_data[c].values))
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
+        pca = PCA(n_components=220)
+        all_data = pca.fit_transform(all_data)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
     def model(self):
