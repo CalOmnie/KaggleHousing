@@ -15,7 +15,7 @@ class KaggleModel(object):
     def __init__(self, trainFile, testFile):
         self._train = pd.read_csv(trainFile)
         self._test = pd.read_csv(testFile)
-        self._testID = self._test["Id"]
+        self._testID = self._test.loc[:, "Id"]
         self._yTrain = self._train["SalePrice"]
 
     def clean(self):
@@ -93,7 +93,7 @@ class KaggleModel(object):
             lbl.fit(list(all_data[c].values))
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
-        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train)-1:])
         print(self._train.shape, self._test.shape)
 
     def model(self):
@@ -132,7 +132,12 @@ class KaggleModel(object):
         res_price = self._model.predict(x_test)
         res = self._testID
         res["SalePrice"] = res_price
-        res.to_csv("sub.csv", index=False)
+        print(self._testID.shape, res_price.shape)
+        resFrame = pd.DataFrame(
+            data = {"Id": self._testID, "SalePrice": res_price}
+        )
+        resFrame.to_csv("sub.csv", index=False)
+        print(resFrame.shape, type(resFrame))
         subNumber = self.__getSubNumber()
         os.system(f"git add -u && git commit -m \"Submission number {subNumber}\"")
         os.system(f"kaggle competitions submit -c house-prices-advanced-regression-techniques -f sub.csv -m \"Submission number {subNumber}\"")
