@@ -6,6 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
+from sklearn.linear_model import Lasso
 
 def rmse(predictions, targets):
     return np.sqrt(np.mean((np.log(predictions)-np.log(targets))**2))
@@ -94,10 +95,9 @@ class KaggleModel(object):
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
-        print(self._train.shape, self._test.shape)
 
     def model(self):
-        self._model = RandomForestRegressor()
+        self._model = Lasso(alpha=0.1)
 
     def test(self):
         x = self._train
@@ -128,15 +128,12 @@ class KaggleModel(object):
         self._model.fit(x, y)
 
         x_test = self._test
-        print(x.shape, y.shape, x_test.shape)
         res_price = self._model.predict(x_test)
         res = self._testID.astype(int)
-        print(res.shape, res_price.shape)
         resFrame = pd.DataFrame(
             data = {"Id": res, "SalePrice": res_price}
         )
         resFrame.to_csv("sub.csv", index=False)
-        print(resFrame.shape, type(resFrame))
         subNumber = self.__getSubNumber()
         os.system(f"git add -u && git commit -m \"Submission number {subNumber}\"")
         os.system(f"kaggle competitions submit -c house-prices-advanced-regression-techniques -f sub.csv -m \"Submission number {subNumber}\"")
