@@ -7,6 +7,8 @@ from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
 from sklearn.linear_model import Lasso
+from scipy.stats import skew
+from scipy.special import boxcox1p
 import lightgbm as lgb
 
 def rmse(y_train, y_true):
@@ -95,8 +97,18 @@ class KaggleModel(object):
             lbl.fit(list(all_data[c].values))
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
-        pca = PCA(n_components=220)
-        all_data = pca.fit_transform(all_data)
+
+        numeric_feats = all_data.dtypes[all_data.dtypes != "object"].index
+        # Check the skew of all numerical features
+        skewed_feats = all_data[numeric_feats].apply(lambda x: skew(x)).sort_values(ascending=False)
+        skewness = pd.DataFrame({'Skew': skewed_feats})
+        skewed_features = skewness.index
+        lam = 0.15
+        for feat in skewed_features:
+            all_data[feat] = boxcox1p(all_data[feat], lam)
+
+        # pca = PCA(n_components=220)
+        # all_data = pca.fit_transform(all_data)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
     def model(self):
