@@ -94,7 +94,7 @@ class KaggleModel(object):
             lbl.fit(list(all_data[c].values))
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
-        pca = PCA(n_components=220)
+        pca = PCA(n_components=100)
         all_data = pca.fit_transform(all_data)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
