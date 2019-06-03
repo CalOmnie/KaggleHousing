@@ -106,6 +106,7 @@ class KaggleModel(object):
         # print(y_train)
         self._model.fit(x_train, y_train)
         y_pred = self._model.predict(x_test)
+        y_pred, y_test = np.expm1(y_pred), np.expm1(y_test)
         print(f"Accuracy is: {rmse(y_test, y_pred)}")
 
     def __getSubNumber(self):
@@ -127,7 +128,7 @@ class KaggleModel(object):
         self._model.fit(x, y)
 
         x_test = self._test
-        res_price = self._model.predict(x_test)
+        res_price = np.expm1(self._model.predict(x_test))
         res = self._testID.astype(int)
         resFrame = pd.DataFrame(
             data = {"Id": res, "SalePrice": res_price}
