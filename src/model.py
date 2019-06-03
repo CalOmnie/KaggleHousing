@@ -93,7 +93,7 @@ class KaggleModel(object):
             lbl.fit(list(all_data[c].values))
             all_data[c] = lbl.transform(list(all_data[c].values))
         all_data = pd.get_dummies(all_data)
-        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train)-1:])
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
         print(self._train.shape, self._test.shape)
 
     def model(self):
@@ -130,11 +130,10 @@ class KaggleModel(object):
         x_test = self._test
         print(x.shape, y.shape, x_test.shape)
         res_price = self._model.predict(x_test)
-        res = self._testID
-        res["SalePrice"] = res_price
-        print(self._testID.shape, res_price.shape)
+        res = self._testID.astype(int)
+        print(res.shape, res_price.shape)
         resFrame = pd.DataFrame(
-            data = {"Id": self._testID, "SalePrice": res_price}
+            data = {"Id": res, "SalePrice": res_price}
         )
         resFrame.to_csv("sub.csv", index=False)
         print(resFrame.shape, type(resFrame))
