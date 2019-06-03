@@ -3,15 +3,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
 from sklearn.linear_model import Lasso
 
-def rmse(predictions, targets):
-    return np.sqrt(np.mean((np.log(predictions)-np.log(targets))**2))
-
-
+def rmse(y_train, y_true):
+    return np.sqrt(np.mean((np.log(y_train) - np.log(y_true))**2))
 class KaggleModel(object):
     def __init__(self, trainFile, testFile):
         self._train = pd.read_csv(trainFile)
@@ -28,6 +26,7 @@ class KaggleModel(object):
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
         self._yTrain = self._train["SalePrice"]
+        self._yTrain = np.log1p(self._yTrain)
         self.fill()
 
     def fill(self):
@@ -97,7 +96,7 @@ class KaggleModel(object):
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
     def model(self):
-        self._model = Lasso(alpha=0.1)
+        self._model = Lasso(alpha=0.0005)
 
     def test(self):
         x = self._train
@@ -107,7 +106,7 @@ class KaggleModel(object):
         # print(y_train)
         self._model.fit(x_train, y_train)
         y_pred = self._model.predict(x_test)
-        print(f"Accuracy is: {rmse(y_pred, y_test)}")
+        print(f"Accuracy is: {rmse(y_test, y_pred)}")
 
     def __getSubNumber(self):
         with open("submissions", "r+") as f:
