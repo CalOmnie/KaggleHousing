@@ -12,7 +12,6 @@ if __name__ == "__main__":
     parser.add_argument("actions", nargs='*', help="The action to be performed by the model")
     args= parser.parse_args()
     model = KaggleModel(args.trainFile, args.testFile)
-    print(dir(model))
     for act in args.actions:
         f = getattr(model, act)
         f()
