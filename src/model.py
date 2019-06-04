@@ -1,4 +1,5 @@
 import os
+import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,6 +29,8 @@ class KaggleModel(object):
 
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
+        self.augment()
+
         self._yTrain = self._train["SalePrice"]
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
@@ -144,16 +147,26 @@ class KaggleModel(object):
 
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
+    def augment(self):
+        augmented = []
+        for _, row in self._train.iterrows():
+            newRow = row.copy()
+            noise = row["SalePrice"] / 20
+            numAug = 3
+            for i in range(numAug):
+                newRow["SalePrice"] += random.uniform(-noise, noise)
+                augmented.append(newRow)
+        self._train = self._train.append(augmented)
 
     def model(self):
-        self._model = Lasso(alpha=0.0005)
+        # self._model = Lasso(alpha=0.0005)
         # self._model = RandomForestRegressor(max_depth = 6)
-        # self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
-        #                       learning_rate=0.05, n_estimators=720,
-        #                       max_bin = 55, bagging_fraction = 0.8,
-        #                       bagging_freq = 5, feature_fraction = 0.2319,
-        #                       feature_fraction_seed=9, bagging_seed=9,
-        #                       min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
+        self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
+                              learning_rate=0.05, n_estimators=720,
+                              max_bin = 55, bagging_fraction = 0.8,
+                              bagging_freq = 5, feature_fraction = 0.2319,
+                              feature_fraction_seed=9, bagging_seed=9,
+                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
 
     def test(self):
         x = self._train
