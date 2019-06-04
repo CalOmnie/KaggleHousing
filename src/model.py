@@ -29,7 +29,7 @@ class KaggleModel(object):
 
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
-        self.augment()
+        # self.augment()
 
         self._yTrain = self._train["SalePrice"]
         self._yTrain = np.log1p(self._yTrain)
