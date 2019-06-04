@@ -31,7 +31,9 @@ class KaggleModel(object):
         self._yTrain = self._train["SalePrice"]
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
-        
+        self.addNew()
+        self.handleCategorical()
+        self.handleNumerical()
 
     def fill(self):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
@@ -79,25 +81,54 @@ class KaggleModel(object):
         all_data['Exterior2nd'] = all_data['Exterior2nd'].fillna(all_data['Exterior2nd'].mode()[0])
         all_data['SaleType'] = all_data['SaleType'].fillna(all_data['SaleType'].mode()[0])
         all_data['MSSubClass'] = all_data['MSSubClass'].fillna("None")
-        # That value is categorical
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
+
+    def addNew(self):
+        all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
+        # Adding new feature
+        all_data['TotalSF'] = all_data['TotalBsmtSF'] + all_data['GrLivArea']
+        all_data["AllBath"] = all_data["FullBath"] + 0.5*all_data["HalfBath"] + all_data["BsmtFullBath"] + 0.5*all_data["BsmtHalfBath"]
+        all_data["Remod"] = (all_data["YearBuilt"] == all_data["YearRemodAdd"]).astype(int)
+        all_data["Age"] = all_data["YrSold"] - all_data["YearRemodAdd"]
+        all_data["IsNew"] = (all_data["YrSold"] == all_data["YearBuilt"]).astype(int)
+        neighborhoods = {
+            "StoneBr":2,
+            "NridgHt":2,
+            "NoRidge":2,
+            "Meadow":0,
+            "IDOTRR":0,
+            "BrDale":0,
+        }
+        all_data["NeighRich"] = all_data["Neighborhood"].apply(lambda x: neighborhoods.get(x, 1))
+        all_data["TotalPorchSF"] = (all_data["OpenPorchSF"] + all_data["EnclosedPorch"] +
+                                    all_data["3SsnPorch"] + all_data["ScreenPorch"])
+        toDrop = ['YearRemodAdd', 'GarageYrBlt', 'GarageArea', 'GarageCond', 'TotalBsmtSF', 'TotRmsAbvGrd', 'BsmtFinSF1']
+        all_data.drop(toDrop, axis=1, inplace=True)
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
+
+    def handleCategorical(self):
+        all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
+        # Add extra categorical values
         all_data['MSSubClass'] = all_data['MSSubClass'].apply(str)
         all_data['OverallCond'] = all_data['OverallCond'].astype(str)
         all_data['YrSold'] = all_data['YrSold'].astype(str)
         all_data['MoSold'] = all_data['MoSold'].astype(str)
-        # Adding new feature
-        all_data['TotalSF'] = all_data['TotalBsmtSF'] + all_data['1stFlrSF'] + all_data['2ndFlrSF']
+        cat_feats = all_data.dtypes[all_data.dtypes == "object"].index
+        num_feats = all_data.dtypes[all_data.dtypes != "object"].index
+        encoded = pd.get_dummies(all_data[cat_feats])
 
-        cols = ('FireplaceQu', 'BsmtQual', 'BsmtCond', 'GarageQual', 'GarageCond', 
-        'ExterQual', 'ExterCond','HeatingQC', 'PoolQC', 'KitchenQual', 'BsmtFinType1', 
-        'BsmtFinType2', 'Functional', 'Fence', 'BsmtExposure', 'GarageFinish', 'LandSlope',
-        'LotShape', 'PavedDrive', 'Street', 'Alley', 'CentralAir', 'MSSubClass', 'OverallCond', 
-        'YrSold', 'MoSold')
-        for c in cols:
-            lbl = LabelEncoder()
-            lbl.fit(list(all_data[c].values))
-            all_data[c] = lbl.transform(list(all_data[c].values))
-        all_data = pd.get_dummies(all_data)
+        encoded_test = encoded[len(self._train):]
+        zeros = encoded_test.sum() == 0
+        encoded.drop(encoded_test.columns[zeros], axis=1, inplace=True)
+        encoded_train = encoded[len(self._train):]
+        zeros = encoded_train.sum() < 10
+        encoded.drop(encoded_train.columns[zeros], axis=1, inplace=True)
 
+        all_data = pd.concat((all_data[num_feats], encoded), axis=1)
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
+
+    def handleNumerical(self):
+        all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
         numeric_feats = all_data.dtypes[all_data.dtypes != "object"].index
         # Check the skew of all numerical features
         skewed_feats = all_data[numeric_feats].apply(lambda x: skew(x)).sort_values(ascending=False)
@@ -107,28 +138,28 @@ class KaggleModel(object):
         for feat in skewed_features:
             all_data[feat] = boxcox1p(all_data[feat], lam)
 
-        # pca = PCA(n_components=220)
-        # all_data = pca.fit_transform(all_data)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
+
     def model(self):
-        self._model = Lasso(alpha=0.0005)
-        # self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
-        #                       learning_rate=0.05, n_estimators=720,
-        #                       max_bin = 55, bagging_fraction = 0.8,
-        #                       bagging_freq = 5, feature_fraction = 0.2319,
-        #                       feature_fraction_seed=9, bagging_seed=9,
-        #                       min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
+        # self._model = Lasso(alpha=0.0005)
+        # self._model = RandomForestRegressor(max_depth = 10)
+        self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
+                              learning_rate=0.05, n_estimators=720,
+                              max_bin = 55, bagging_fraction = 0.8,
+                              bagging_freq = 5, feature_fraction = 0.2319,
+                              feature_fraction_seed=9, bagging_seed=9,
+                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
 
     def test(self):
         x = self._train
         y = self._yTrain
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
+        # x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
         # print(x_train.shape, y_train.shape)
         # print(y_train)
-        self._model.fit(x_train, y_train)
-        y_pred = self._model.predict(x_test)
-        y_pred, y_test = np.expm1(y_pred), np.expm1(y_test)
+        self._model.fit(x, y)
+        y_pred = self._model.predict(x)
+        y_pred, y_test = np.expm1(y_pred), np.expm1(y)
         print(f"Accuracy is: {rmse(y_test, y_pred)}")
 
     def __getSubNumber(self):
