@@ -37,7 +37,7 @@ class KaggleModel(object):
         self.addNew()
         self.handleNumerical()
         self.handleCategorical()
-        self.pca()
+        # self.pca()
 
     def fill(self):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
