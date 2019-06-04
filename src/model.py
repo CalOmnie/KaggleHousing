@@ -3,14 +3,21 @@ import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, ElasticNet, BayesianRidge
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import RobustScaler
 from scipy.stats import skew
 from scipy.special import boxcox1p
 import lightgbm as lgb
+import xgboost as xgb
+
+np.random.seed(0)
 
 def rmse(y_train, y_true):
     return np.sqrt(np.mean((np.log(y_train) - np.log(y_true))**2))
@@ -29,9 +36,9 @@ class KaggleModel(object):
 
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
-        # self.augment()
+        self.augment()
 
-        self._yTrain = self._train["SalePrice"]
+        self._yTrain = self._train.SalePrice.values
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
         self.addNew()
@@ -39,7 +46,7 @@ class KaggleModel(object):
         self.handleCategorical()
 
     def fill(self):
-        all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
+        all_data = pd.concat((self._train, self._test), sort=False).reset_index(drop=True)
         all_data.drop("SalePrice", axis=1, inplace=True)
 
         # Data descr says NA means "No pool"
@@ -154,38 +161,56 @@ class KaggleModel(object):
         augmented = []
         for _, row in self._train.iterrows():
             newRow = row.copy()
-            noise = row["SalePrice"] / 100
-            numAug = 2
+            noise = row["SalePrice"] / 20
+            numAug = 1
             for i in range(numAug):
                 newRow["SalePrice"] += random.uniform(-noise, noise)
                 augmented.append(newRow)
         self._train = self._train.append(augmented)
 
     def model(self):
-        # self._model = Lasso(alpha=0.0005)
-        # self._model = RandomForestRegressor(max_depth = 6)
-        self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5)
-                              # learning_rate=0.05, n_estimators=720,
-                              # max_bin = 55, bagging_fraction = 0.8,
-                              # bagging_freq = 5, feature_fraction = 0.2319,
-                              # feature_fraction_seed=9, bagging_seed=9,
-                              # min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
+        lasso = make_pipeline(RobustScaler(), Lasso(alpha =0.0005, random_state=1))
+        ENet = make_pipeline(RobustScaler(), ElasticNet(alpha=0.0005, l1_ratio=.9, random_state=3))
+        KRR = KernelRidge(alpha=0.6, kernel='polynomial', degree=2, coef0=2.5)
+        model_xgb = xgb.XGBRegressor(colsample_bytree=0.4603, gamma=0.0468,
+                                     learning_rate=0.05, max_depth=3,
+                                     min_child_weight=1.7817, n_estimators=2200,
+                                     reg_alpha=0.4640, reg_lambda=0.8571,
+                                     subsample=0.5213, silent=1,
+                                     random_state=7, nthread =-1)
+        GBoost = GradientBoostingRegressor(n_estimators=3000, learning_rate=0.05,
+                                   max_depth=4, max_features='sqrt',
+                                   min_samples_leaf=15, min_samples_split=10,
+                                   loss='huber', random_state =5)
+        model_lgb = lgb.LGBMRegressor(objective='regression',num_leaves=5,
+                                              learning_rate=0.05, n_estimators=720,
+                                              max_bin = 55, bagging_fraction = 0.8,
+                                              bagging_freq = 5, feature_fraction = 0.2319,
+                                              feature_fraction_seed=9, bagging_seed=9,
+                                              min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
+        stacked_model = StackingAveragedModels(base_models=(ENet, GBoost, KRR), meta_model=lasso)
+        self._models = (lasso, ENet, KRR, model_lgb, GBoost, stacked_model)
+
+    def _rmse_cv(self):
+        n_folds = 5
+        kf = KFold(n_folds, shuffle=False, random_state=42).get_n_splits(self._train.values)
+        res = []
+        for model in self._models:
+            res.append(np.sqrt(-cross_val_score(model,
+                                            self._train.values,
+                                            self._yTrain,
+                                            scoring="neg_mean_squared_error",
+                                            cv=kf)))
+        return res
 
     def test(self):
-        x = self._train
-        y = self._yTrain
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
-        # print(x_train.shape, y_train.shape)
-        # print(y_train)
-        self._model.fit(x_train, y_train)
-        y_pred = self._model.predict(x_test)
-        y_pred, y_test = np.expm1(y_pred), np.expm1(y_test)
-        print(f"Accuracy is: {rmse(y_test, y_pred)}")
+        res = self._rmse_cv()
+        for r in res:
+            print(f"Accuracy is: {r.mean()}, {r.std()}")
 
     def __getSubNumber(self):
         with open("submissions", "r+") as f:
             val = f.read()
-            print(val)
             if not val:
                 newVal = 1
             else:
@@ -196,12 +221,14 @@ class KaggleModel(object):
             return newVal
 
     def submit(self):
-        x = self._train
+        x = self._train.to_numpy()
         y = self._yTrain
-        self._model.fit(x, y)
+        model = self._models[-1]
+        print(x.shape, y.shape)
+        model.fit(x, y)
 
         x_test = self._test
-        res_price = np.expm1(self._model.predict(x_test))
+        res_price = np.expm1(model.predict(x_test))
         res = self._testID.astype(int)
         resFrame = pd.DataFrame(
             data = {"Id": res, "SalePrice": res_price}
@@ -210,3 +237,40 @@ class KaggleModel(object):
         subNumber = self.__getSubNumber()
         os.system(f"git add -u && git commit -m \"Submission number {subNumber}\"")
         os.system(f"kaggle competitions submit -c house-prices-advanced-regression-techniques -f sub.csv -m \"Submission number {subNumber}\"")
+
+
+
+class StackingAveragedModels(BaseEstimator, RegressorMixin, TransformerMixin):
+    def __init__(self, base_models, meta_model, n_folds=5):
+        self.base_models = base_models
+        self.meta_model = meta_model
+        self.n_folds = n_folds
+
+    # We again fit the data on clones of the original models
+    def fit(self, X, y):
+        self.base_models_ = [list() for x in self.base_models]
+        self.meta_model_ = clone(self.meta_model)
+        kfold = KFold(n_splits=self.n_folds, shuffle=True, random_state=156)
+
+        # Train cloned base models then create out-of-fold predictions
+        # that are needed to train the cloned meta-model
+        out_of_fold_predictions = np.zeros((X.shape[0], len(self.base_models)))
+        for i, model in enumerate(self.base_models):
+            for train_index, holdout_index in kfold.split(X, y):
+                instance = clone(model)
+                self.base_models_[i].append(instance)
+                instance.fit(X[train_index], y[train_index])
+                y_pred = instance.predict(X[holdout_index])
+                out_of_fold_predictions[holdout_index, i] = y_pred
+
+        # Now train the cloned  meta-model using the out-of-fold predictions as new feature
+        self.meta_model_.fit(out_of_fold_predictions, y)
+        return self
+
+    #Do the predictions of all base models on the test data and use the averaged predictions as 
+    #meta-features for the final prediction which is done by the meta-model
+    def predict(self, X):
+        meta_features = np.column_stack([
+            np.column_stack([model.predict(X) for model in base_models]).mean(axis=1)
+            for base_models in self.base_models_ ])
+        return self.meta_model_.predict(meta_features)
