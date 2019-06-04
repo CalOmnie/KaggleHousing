@@ -152,7 +152,7 @@ class KaggleModel(object):
         for _, row in self._train.iterrows():
             newRow = row.copy()
             noise = row["SalePrice"] / 20
-            numAug = 3
+            numAug = 6
             for i in range(numAug):
                 newRow["SalePrice"] += random.uniform(-noise, noise)
                 augmented.append(newRow)
