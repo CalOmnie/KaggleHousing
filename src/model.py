@@ -35,11 +35,9 @@ class KaggleModel(object):
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
         self.addNew()
-        print(self._test["Age"].isna().sum())
         self.handleNumerical()
-        print(self._test["Age"].isna().sum())
         self.handleCategorical()
-        print(self._test["Age"].isna().sum())
+        self.pca()
 
     def fill(self):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
@@ -147,12 +145,18 @@ class KaggleModel(object):
 
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
+    def pca(self):
+        all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
+        pc = PCA()
+        all_data = pc.fit_transform(all_data)
+        self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
+
     def augment(self):
         augmented = []
         for _, row in self._train.iterrows():
             newRow = row.copy()
-            noise = row["SalePrice"] / 20
-            numAug = 6
+            noise = row["SalePrice"] / 100
+            numAug = 2
             for i in range(numAug):
                 newRow["SalePrice"] += random.uniform(-noise, noise)
                 augmented.append(newRow)
@@ -198,7 +202,6 @@ class KaggleModel(object):
         self._model.fit(x, y)
 
         x_test = self._test
-        print(x_test["Age"].isna().sum())
         res_price = np.expm1(self._model.predict(x_test))
         res = self._testID.astype(int)
         resFrame = pd.DataFrame(
