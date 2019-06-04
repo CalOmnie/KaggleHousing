@@ -146,8 +146,8 @@ class KaggleModel(object):
 
 
     def model(self):
-        # self._model = Lasso(alpha=0.0005)
-        self._model = RandomForestRegressor(max_depth = 6)
+        self._model = Lasso(alpha=0.0005)
+        # self._model = RandomForestRegressor(max_depth = 6)
         # self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
         #                       learning_rate=0.05, n_estimators=720,
         #                       max_bin = 55, bagging_fraction = 0.8,
