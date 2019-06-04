@@ -32,8 +32,11 @@ class KaggleModel(object):
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
         self.addNew()
-        self.handleCategorical()
+        print(self._test["Age"].isna().sum())
         self.handleNumerical()
+        print(self._test["Age"].isna().sum())
+        self.handleCategorical()
+        print(self._test["Age"].isna().sum())
 
     def fill(self):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
@@ -133,6 +136,7 @@ class KaggleModel(object):
         # Check the skew of all numerical features
         skewed_feats = all_data[numeric_feats].apply(lambda x: skew(x)).sort_values(ascending=False)
         skewness = pd.DataFrame({'Skew': skewed_feats})
+        skewness = skewness.loc[skewness["Skew"] > 0.75]
         skewed_features = skewness.index
         lam = 0.15
         for feat in skewed_features:
@@ -143,7 +147,7 @@ class KaggleModel(object):
 
     def model(self):
         # self._model = Lasso(alpha=0.0005)
-        # self._model = RandomForestRegressor(max_depth = 10)
+        # self._model = RandomForestRegressor(max_depth = 6)
         self._model = lgb.LGBMRegressor(objective='regression',num_leaves=5,
                               learning_rate=0.05, n_estimators=720,
                               max_bin = 55, bagging_fraction = 0.8,
@@ -154,12 +158,12 @@ class KaggleModel(object):
     def test(self):
         x = self._train
         y = self._yTrain
-        # x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.33)
         # print(x_train.shape, y_train.shape)
         # print(y_train)
-        self._model.fit(x, y)
-        y_pred = self._model.predict(x)
-        y_pred, y_test = np.expm1(y_pred), np.expm1(y)
+        self._model.fit(x_train, y_train)
+        y_pred = self._model.predict(x_test)
+        y_pred, y_test = np.expm1(y_pred), np.expm1(y_test)
         print(f"Accuracy is: {rmse(y_test, y_pred)}")
 
     def __getSubNumber(self):
@@ -181,6 +185,7 @@ class KaggleModel(object):
         self._model.fit(x, y)
 
         x_test = self._test
+        print(x_test["Age"].isna().sum())
         res_price = np.expm1(self._model.predict(x_test))
         res = self._testID.astype(int)
         resFrame = pd.DataFrame(
