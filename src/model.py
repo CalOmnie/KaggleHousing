@@ -189,7 +189,7 @@ class KaggleModel(object):
                                               feature_fraction_seed=9, bagging_seed=9,
                                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
         stacked_model = StackingAveragedModels(base_models=(ENet, GBoost, KRR), meta_model=lasso)
-        self._models = (lasso, ENet, KRR, GBoost, stacked_model)
+        self._models = (model_lgb, stacked_model)
 
     def _rmse_cv(self):
         n_folds = 5
@@ -223,15 +223,18 @@ class KaggleModel(object):
     def submit(self):
         x = self._train.to_numpy()
         y = self._yTrain
-        model = self._models[-1]
+        model1 = self._models[0]
+        model2 = self._models[1]
         print(x.shape, y.shape)
-        model.fit(x, y)
+        model1.fit(x, y)
+        model2.fit(x, y)
 
         x_test = self._test
-        res_price = np.expm1(model.predict(x_test))
+        res_price1 = np.expm1(model1.predict(x_test))
+        res_price2 = np.expm1(model2.predict(x_test))
         res = self._testID.astype(int)
         resFrame = pd.DataFrame(
-            data = {"Id": res, "SalePrice": res_price}
+            data = {"Id": res, "SalePrice": 0.3*res_price1+0.7*res_price2}
         )
         resFrame.to_csv("sub.csv", index=False)
         subNumber = self.__getSubNumber()
