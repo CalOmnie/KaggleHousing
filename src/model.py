@@ -36,7 +36,7 @@ class KaggleModel(object):
 
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
-        self.augment()
+        # self.augment()
 
         self._yTrain = self._train.SalePrice.values
         self._yTrain = np.log1p(self._yTrain)
@@ -189,7 +189,7 @@ class KaggleModel(object):
                                               feature_fraction_seed=9, bagging_seed=9,
                                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
         stacked_model = StackingAveragedModels(base_models=(ENet, GBoost, KRR), meta_model=lasso)
-        self._models = (lasso, ENet, KRR, model_lgb, GBoost, stacked_model)
+        self._models = (lasso, ENet, KRR, GBoost, stacked_model)
 
     def _rmse_cv(self):
         n_folds = 5
