@@ -14,6 +14,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import RobustScaler
 from scipy.stats import skew
 from scipy.special import boxcox1p
+from scipy.stats import boxcox_normmax
 import lightgbm as lgb
 import xgboost as xgb
 
@@ -32,17 +33,23 @@ class KaggleModel(object):
         # Remove Id as it's not useful for prediction
         # print(self._test["Id"].shape, self._train["Id"].shape)
         self._test.drop(["Id"], axis=1, inplace=True)
-        self._train.drop(["Id"], axis=1, inplace=True)
+        self._train.drop(["Order", "PID"], axis=1, inplace=True)
+        newCol = ["".join(c.split()) for c in self._train.columns]
+        newCol = ["".join(c.split("/")) for c in newCol]
+        self._train.columns = newCol
 
         # Remove outliers
         self._train = self._train.drop(self._train[(self._train['GrLivArea']>4000) & (self._train['SalePrice']<300000)].index)
-        # self.augment()
-
+        self.augment()
+        print(self._train.columns)
+        print(self._test.columns)
         self._yTrain = self._train.SalePrice.values
         self._yTrain = np.log1p(self._yTrain)
         self.fill()
         self.addNew()
         self.handleNumerical()
+        self._train["LotFrontage"] = self._train["LotFrontage"].fillna(0)
+        print(self._train.isna().sum())
         self.handleCategorical()
 
     def fill(self):
@@ -81,7 +88,7 @@ class KaggleModel(object):
         all_data["MSZoning"] = all_data.groupby("Neighborhood")["MSZoning"].transform(
             lambda x: x.fillna(x.mode()))
         # Utilities is not varied enough
-        all_data = all_data.drop(['Utilities'], axis=1)
+        all_data = all_data.drop(['Utilities', 'Street', 'PoolQC'], axis=1)
         # NA means typical
         all_data["Functional"] = all_data["Functional"].fillna("Typ")
         # Only one NA
@@ -99,6 +106,7 @@ class KaggleModel(object):
         all_data['TotalSF'] = all_data['TotalBsmtSF'] + all_data['GrLivArea']
         all_data["AllBath"] = all_data["FullBath"] + 0.5*all_data["HalfBath"] + all_data["BsmtFullBath"] + 0.5*all_data["BsmtHalfBath"]
         all_data["Remod"] = (all_data["YearBuilt"] == all_data["YearRemodAdd"]).astype(int)
+        print(all_data["YrSold"].isna().sum(), all_data["YearRemodAdd"].isna().sum())
         all_data["Age"] = all_data["YrSold"] - all_data["YearRemodAdd"]
         all_data["IsNew"] = (all_data["YrSold"] == all_data["YearBuilt"]).astype(int)
         neighborhoods = {
@@ -120,21 +128,17 @@ class KaggleModel(object):
         all_data = pd.concat((self._train, self._test)).reset_index(drop=True)
         # Add extra categorical values
         all_data['MSSubClass'] = all_data['MSSubClass'].apply(str)
-        all_data['OverallCond'] = all_data['OverallCond'].astype(str)
         all_data['YrSold'] = all_data['YrSold'].astype(str)
         all_data['MoSold'] = all_data['MoSold'].astype(str)
-        cat_feats = all_data.dtypes[all_data.dtypes == "object"].index
-        num_feats = all_data.dtypes[all_data.dtypes != "object"].index
-        encoded = pd.get_dummies(all_data[cat_feats])
+        all_data = pd.get_dummies(all_data).reset_index(drop=True)
 
-        encoded_test = encoded[len(self._train):]
-        zeros = encoded_test.sum() == 0
-        encoded.drop(encoded_test.columns[zeros], axis=1, inplace=True)
-        encoded_train = encoded[len(self._train):]
-        zeros = encoded_train.sum() < 10
-        encoded.drop(encoded_train.columns[zeros], axis=1, inplace=True)
-
-        all_data = pd.concat((all_data[num_feats], encoded), axis=1)
+        overfit = []
+        for i in all_data.columns:
+            counts = all_data[i].value_counts()
+            zeros = counts.iloc[0]
+            if zeros / len(all_data) * 100 > 99.94:
+                overfit.append(i)
+        all_data.drop(overfit, axis=1, inplace=True)
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
     def handleNumerical(self):
@@ -143,11 +147,10 @@ class KaggleModel(object):
         # Check the skew of all numerical features
         skewed_feats = all_data[numeric_feats].apply(lambda x: skew(x)).sort_values(ascending=False)
         skewness = pd.DataFrame({'Skew': skewed_feats})
-        skewness = skewness.loc[skewness["Skew"] > 0.75]
+        skewness = skewness.loc[skewness["Skew"] > 0.5]
         skewed_features = skewness.index
-        lam = 0.15
         for feat in skewed_features:
-            all_data[feat] = boxcox1p(all_data[feat], lam)
+            all_data[feat] = boxcox1p(all_data[feat], boxcox_normmax(all_data[feat]+1))
 
         self._train, self._test = (all_data[:len(self._train)], all_data[len(self._train):])
 
@@ -189,7 +192,7 @@ class KaggleModel(object):
                                               feature_fraction_seed=9, bagging_seed=9,
                                               min_data_in_leaf =6, min_sum_hessian_in_leaf = 11)
         stacked_model = StackingAveragedModels(base_models=(ENet, GBoost, KRR), meta_model=lasso)
-        self._models = (model_lgb, stacked_model)
+        self._models = (model_lgb,)
 
     def _rmse_cv(self):
         n_folds = 5
@@ -224,7 +227,7 @@ class KaggleModel(object):
         x = self._train.to_numpy()
         y = self._yTrain
         model1 = self._models[0]
-        model2 = self._models[1]
+        model2 = self._models[0]
         print(x.shape, y.shape)
         model1.fit(x, y)
         model2.fit(x, y)
